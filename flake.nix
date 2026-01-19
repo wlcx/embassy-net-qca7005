@@ -38,8 +38,8 @@
       # Provide a dev env with rust and rust-analyzer
       devShells.default = craneLib.devShell {
         # extra dev packages
-        packages = [];
+        packages = [pkgs.rust-analyzer];
       };
-      formatter = pkgs.alejandra;
+      formatter = pkgs.nixfmt-nixfmt-rfc-style;
     });
 }

@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 embassy-net-driver = "0.2.0"
+embedded-hal = "1.0.0"
+embedded-io = "0.7.1"
