@@ -1,4 +1,6 @@
-use embedded_io::{Read, Write};
+use embedded_io::{Read, ReadReady, Write};
+
+const MTU: usize = 1520;
 
 pub struct Qca7000<U> {
     uart: U,
@@ -6,16 +8,26 @@ pub struct Qca7000<U> {
 
 impl<U> Qca7000<U>
 where
-    U: Read + Write,
+    U: Read + Write + ReadReady,
 {
     pub fn transmit(&self, buf: &[u8]) {
         unimplemented!()
     }
+
+    pub fn receive(&mut self, buf: &mut [u8]) -> Option<usize> {
+        self.uart
+            .read_ready()
+            .ok()
+            .and_then(|r| if r { self.uart.read(buf).ok() } else { None })
+    }
 }
+
+static mut TX_BUF: [u8; MTU] = [0; MTU];
+static mut RX_BUF: [u8; MTU] = [0; MTU];
 
 impl<U> embassy_net_driver::Driver for Qca7000<U>
 where
-    U: Read + Write,
+    U: Read + Write + ReadReady,
 {
     type RxToken<'a>
         = RxToken<'a>
@@ -30,7 +42,23 @@ where
         &mut self,
         cx: &mut std::task::Context,
     ) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        unimplemented!()
+        // This is lifted from embassy-net-enc28j60. I'm not really sure of why this is sound, but I guess it must be - and I can't find any other examples of enet-driver crates (as opposed to enet-driver-channel).
+        let rx_buf = unsafe { &mut *core::ptr::addr_of_mut!(RX_BUF) };
+        let tx_buf = unsafe { &mut *core::ptr::addr_of_mut!(TX_BUF) };
+        if let Some(n) = self.receive(rx_buf) {
+            Some((
+                RxToken {
+                    buf: &mut rx_buf[..n],
+                },
+                TxToken {
+                    buf: tx_buf,
+                    qca: self,
+                },
+            ))
+        } else {
+            cx.waker().wake_by_ref();
+            None
+        }
     }
 
     fn transmit(&mut self, cx: &mut std::task::Context) -> Option<Self::TxToken<'_>> {
@@ -64,7 +92,7 @@ where
     U: Read + Write,
 {
     buf: &'a mut [u8],
-    qca: Qca7000<U>,
+    qca: &'a mut Qca7000<U>,
 }
 
 impl<'a, U> embassy_net_driver::TxToken for TxToken<'a, U>
