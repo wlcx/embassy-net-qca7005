@@ -4,6 +4,7 @@ const MTU: usize = 1520;
 
 pub struct Qca7000<U> {
     uart: U,
+    rx_ptr: usize,
 }
 
 impl<U> Qca7000<U>
@@ -15,15 +16,28 @@ where
     }
 
     pub fn receive(&mut self, buf: &mut [u8]) -> Option<usize> {
-        self.uart
-            .read_ready()
-            .ok()
-            .and_then(|r| if r { self.uart.read(buf).ok() } else { None })
+        // check to see if ready to read, returning None if nothing available
+        self.uart.read_ready().ok().and_then(|r| {
+            if r {
+                match self.uart.read(&mut buf[self.rx_ptr..]) {
+                    Ok(len) => {
+                        self.rx_ptr += len;
+                        if rx_ptr > 3 {
+                            // if we have enough, check to see if we have a
+                        }
+                    }
+                    Err(e) => todo!(),
+                }
+            } else {
+                None
+            }
+        })
     }
 }
 
 static mut TX_BUF: [u8; MTU] = [0; MTU];
-static mut RX_BUF: [u8; MTU] = [0; MTU];
+// rx buffer is sized to fit MTU plus qca uart framing
+static mut RX_BUF: [u8; 4 + 2 + 2 + MTU + 2] = [0; _];
 
 impl<U> embassy_net_driver::Driver for Qca7000<U>
 where
@@ -89,7 +103,7 @@ impl<'a> embassy_net_driver::RxToken for RxToken<'a> {
 
 pub struct TxToken<'a, U>
 where
-    U: Read + Write,
+    U: Read + Write + ReadReady,
 {
     buf: &'a mut [u8],
     qca: &'a mut Qca7000<U>,
@@ -97,7 +111,7 @@ where
 
 impl<'a, U> embassy_net_driver::TxToken for TxToken<'a, U>
 where
-    U: Read + Write,
+    U: Read + Write + ReadReady,
 {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
